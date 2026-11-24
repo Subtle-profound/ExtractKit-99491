@@ -1,0 +1,10 @@
+# 白名单：参考 libsysopt.so 里没有对应字符串、但必须存在的日志（每条都给理由）。
+# 一行一条，与 C 源里的字面量完全一致（不含尾换行）。
+# 1) 我们自己的配置回显，参考包用 argv 直接驱动、没有等价输出
+# 2) 我们自己的 root socket 监听回显，参考包用 pc98260-root.sock 但只在 6.18 那条链里打
+UAF-CHAIN listening at %s pid=%d
+# 3) （9.177 起进程内装载整块移除，原先这里的两条 UAF-LOAD 白名单已随代码删除）
+# 4) 9.177：用户决定 5.x 也统一走管理器自带的 ksud late-load，参考包是在进程内
+#    init_module，没有这条交接路径，因此没有对应日志串
+UAF-KSU handoff stage=%s mgr=%s fsuid=%ld fsgid=%ld
+UAF-KSU worker exit=%#x loaded=%d

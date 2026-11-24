@@ -1,0 +1,28 @@
+ExtractKit 许可与出处说明（NOTICE）
+=====================================
+
+本仓库整体以 GNU General Public License v2.0（见 LICENSE）分发，原因是
+payload/wacom-src/exp.c 与随包的 ek-w1-uid0-6.6 二进制衍生自上游
+woshigenm/CVE-2026-99491-FANXIAOCHAO（GPL-2.0-only）。
+
+分部分说明
+----------
+1) payload/wacom-src/exp.c、app/src/main/assets/payload/wacom/ek-w1-uid0-6.6
+   衍生自：https://github.com/woshigenm/CVE-2026-99491-FANXIAOCHAO
+   上游许可：GPL-2.0-only（Copyright (c) 上游作者）
+   本地改动：删除 ko_syms_check 的 extern 与预检块；tracefs 分支在 exec 管理器 CLI
+   之前把 outq[0]/outq[1] 置 NULL（避免 uhid_char_release() kfree 已回收的 2K 槽）。
+
+2) payload/src/ 下的 CVE-2026-98260 相关源码与 app/src/main/assets/payload/ek-core-android
+   衍生自：https://github.com/woshigenm/CVE-2026-98260 （MIT）
+   在本仓库内以 GPL-2.0 一并分发。
+
+3) payload/wacom-src/ksu_boot.c、payload/src/ek-core-uid0.c 等其余源码为原创实现。
+   本仓库不捆绑 KernelSU 的代码或内核模块：运行时由用户自己安装的管理器
+   （KernelSU / SukiSU 及其分支）提供 ksud CLI 与 kernelsu.ko，本仓库只是调用它。
+
+4) 未捆绑第三方代码：RikkaApps/Shizuku（Apache-2.0）与 tiann/KernelSU（GPL-3.0）
+   仅作为运行环境要求被调用，其源码与二进制均不随本仓库分发。
+
+5) app/src/main/assets/iknow.tsv 为公开可查的机型/固件索引整理；如相关方要求，
+   可单独移除，不影响功能（仅影响「查询固件包」入口）。
