@@ -140,6 +140,16 @@ object ConfigGen {
     }
 
     /**
+     * cred slab 的对象字节数（CRED_ALLOC）。
+     *
+     * `cred_init()` 用 `kmem_cache_create("cred_jar", sizeof(struct cred), 0,
+     * `SLAB_HWCACHE_ALIGN|…)`；SLAB_HWCACHE_ALIGN 会把对象大小向上取整到
+     * cache line（arm64 上是 64 B）。9.457 之前这里按 16 对齐算，credSize
+     * 落在 (192, 208] 之类区间时会算小一档，与真实 slab 对不上。
+     */
+    fun credSlabObjectBytes(credSize: Int): Int = (credSize + 63) / 64 * 64
+
+    /**
      * 没有 BTF 的镜像（典型是 5.10 那一代）用指令挖偏移。
      *
      * BTF 只是「结构布局的说明书」，而内核里三处 `kmem_cache_create` 调用都把
@@ -955,6 +965,109 @@ object ConfigGen {
                 0xFFFFFFC08017C904uL.toLong(), // rcu_gp_kthread
                 0xFFFFFFC0800FC6C4uL.toLong(), // wake_up_new_task
             ),
+        ),
+
+        // 9.455：Redmi 2510DRK44C / 6.6.118-android15-8-g0908354dac1b-ab16143355-4k
+        // 离线解析用户提供的官方 boot.img（100,663,296 B，sha256 37484274…c47e，
+        // kernel_size 36,801,024，偏移 4096 起未压缩 Image）：kallsyms 全解，_text
+        // 0xffffffc080000000；结构偏移用 .BTF 逐字段核对（cred 0xB8 / task_struct 0x12C0 /
+        // k_itimer 0x108）；call site 用 26 位 BL 解码取返址：
+        //   do_timer_create+0xa4 bl kmem_cache_alloc      → 返址 0xffffffc080195d50（+0xa8）
+        //   prepare_creds+0x20    bl kmem_cache_alloc      → 返址 0xffffffc0800e4064（+0x24，全函数唯一一处）
+        //   copy_process+0x13c    bl kmem_cache_alloc_node → 返址 0xffffffc0800ab93c（+0x140）
+        Profile(
+            name = "Redmi 2510DRK44C / 6.6.118-android15-8",
+            prefix = "6.6.118-android15-8-g0908354dac1b",
+            release = "6.6.118-android15-8-g0908354dac1b-ab16143355-4k",
+            models = listOf(),
+            symbols = mapOf(
+                "do_timer_create" to 0xFFFFFFC080195CA8uL.toLong(),
+                "selinux_state" to 0xFFFFFFC08236A2E0uL.toLong(),
+                "panic_on_warn" to 0xFFFFFFC08211AE0CuL.toLong(),
+                "root_user" to 0xFFFFFFC08213F1E0uL.toLong(),
+                "init_user_ns" to 0xFFFFFFC08213EF50uL.toLong(),
+                "init_ucounts" to 0xFFFFFFC082140CB0uL.toLong(),
+                "init_groups" to 0xFFFFFFC082140740uL.toLong(),
+                "init_task" to 0xFFFFFFC08212E280uL.toLong(),
+                "init_cred" to 0xFFFFFFC082140748uL.toLong(),
+            ),
+            offsets = Offsets(
+                itimerSize = 0x108, itimerNode = 0x78, itimerHead = 0x98, itimerElist = 0xA8,
+                itimerFiring = 0xB8, itimerHandling = 0xC0,
+                taskCred = 0x820, taskComm = 0x830,
+                credSize = 0xB8, credUid = 0x8,
+                credSecurity = 0x80, credUser = 0x88,
+                credUserNs = 0x90, credUcounts = 0x98, credGroups = 0xA0,
+            ),
+            measured = Measured(
+                timerSiteOffset = 0xA8,
+                credSiteLow21 = 0xE4064,
+                taskAllocLow21 = 0xAB93C,
+                taskAllocBytes = 0x12C0,
+                credReq = 0xB8,
+                credAlloc = 0xC0,
+            ),
+            schedAnchors = listOf(
+                0xFFFFFFC0800FD0D4uL.toLong(), // pick_next_task_fair
+                0xFFFFFFC0810650FCuL.toLong(), // __schedule
+                0xFFFFFFC0800F33D8uL.toLong(), // finish_task_switch
+                0xFFFFFFC0800F1970uL.toLong(), // try_to_wake_up
+                0xFFFFFFC0800D98C0uL.toLong(), // worker_thread
+                0xFFFFFFC08016A038uL.toLong(), // rcu_gp_kthread
+                0xFFFFFFC0800F2C5CuL.toLong(), // wake_up_new_task
+            ),
+            bootSha256 = "37484274a4c91b2fec88e1ae4e9483631c6e96207eac6761a17aaeb6cbf1c47e",
+            provenance = "offline: Redmi 2510DRK44C official boot.img kallsyms+BTF",
+        ),
+
+        Profile(
+            name = "vivo V2505A / 6.12.58-android16-6",
+            prefix = "6.12.58-android16-6-gdf8d34cadbf7-abogki584560711-4k",
+            release = "6.12.58-android16-6-gdf8d34cadbf7-abogki584560711-4k",
+            models = listOf(),   // 只按 release/prefix 匹配，不额外锁机型
+            // 离线解析 V2505A 官方 boot.img（Image 41,372,160 B，boot.img sha256
+            // 1b6e6abd…c8065）：kallsyms 128,946 条全部解出，_text=0xffffffc080000000；
+            // 结构偏移用 .BTF 逐字段核对（cred 26 成员 / task_struct 0x1440 / k_itimer 0x100）；
+            // call site 用 BL 反汇编取「返址」：
+            //   do_timer_create+0xa8 bl kmem_cache_alloc_noprof → 返址 +0xac（主路径）
+            //   prepare_creds+0x28    bl kmem_cache_alloc_noprof → 返址 +0x2c（cred_jar，可达路径）
+            //   copy_process+0x13c    bl kmem_cache_alloc_node_noprof → 返址 +0x140
+            symbols = mapOf(
+                "do_timer_create" to 0xFFFFFFC080517B40uL.toLong(),
+                "selinux_state" to 0xFFFFFFC0827D6520uL.toLong(),
+                "panic_on_warn" to 0xFFFFFFC08253AFE0uL.toLong(),
+                "root_user" to 0xFFFFFFC082562958uL.toLong(),
+                "init_user_ns" to 0xFFFFFFC0825626E0uL.toLong(),
+                "init_ucounts" to 0xFFFFFFC0825642F0uL.toLong(),
+                "init_groups" to 0xFFFFFFC082563E20uL.toLong(),
+            ),
+            offsets = Offsets(
+                itimerSize = 0x100, itimerNode = 0x78, itimerHead = 0x98, itimerElist = 0xA8,
+                itimerFiring = 0xB8, itimerHandling = 0xC0,
+                taskCred = 0x900, taskComm = 0x910,
+                credSize = 0xB8, credUid = 0x8,
+                credSecurity = 0x80, credUser = 0x88,
+                credUserNs = 0x90, credUcounts = 0x98, credGroups = 0xA0,
+            ),
+            measured = Measured(
+                timerSiteOffset = 0xAC,
+                credSiteLow21 = 0x19B1FC,
+                taskAllocLow21 = 0x1F2938,
+                taskAllocBytes = 0x1440,
+                credReq = 0xB8,
+                credAlloc = 0xC0,
+            ),
+            schedAnchors = listOf(
+                0xFFFFFFC0800D8DA8uL.toLong(), // pick_next_task_fair
+                0xFFFFFFC081261674uL.toLong(), // __schedule
+                0xFFFFFFC08011B5B4uL.toLong(), // finish_task_switch
+                0xFFFFFFC080114018uL.toLong(), // try_to_wake_up
+                0xFFFFFFC080208248uL.toLong(), // worker_thread
+                0xFFFFFFC080171A08uL.toLong(), // rcu_gp_kthread
+                0xFFFFFFC0801F2078uL.toLong(), // wake_up_new_task
+            ),
+            bootSha256 = "1b6e6abdb730f4649d6bbdfcb6c68fb24dd64bd02f8acd68b85bc31e1c2c8065",
+            provenance = "offline: V2505A official boot.img kallsyms+BTF",
         ),
 
         Profile(

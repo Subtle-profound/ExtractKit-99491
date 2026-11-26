@@ -6,6 +6,35 @@
   [woshigenm/CVE-2026-99491-FANXIAOCHAO](https://github.com/woshigenm/CVE-2026-99491-FANXIAOCHAO)（GPL-2.0-only）。
   新增 `NOTICE` 逐部分说明；README 补上带链接的致谢。
 
+## 9.457 — credAlloc 按 64 B 对齐 + 前 13 版的行为修正
+
+- **cred_jar 对齐**：`credAlloc` 原来按 16 B 取整，但内核 `cred_init()` 用
+  `kmem_cache_create("cred_jar", sizeof(struct cred), 0, SLAB_HWCACHE_ALIGN|…)`，是按 cache line
+  （64 B）对齐的。新增 `ConfigGen.credSlabObjectBytes()`，现场标定与测试同源调用。
+  `credSize = 0xB8` 两边都得 `0xC0`，但对 `credSize ∈ (192, 208]` 之类会少算一档。
+- **一次点击只跑一次**（9.445）：删掉自动重跑第二轮。第一轮只要 fire 过，`exp.bootid` 已写，
+  第二轮必被 `fire_guard()` 挡；与其白跑一轮并让人误读成 PARKED，不如直接给结论。
+  代价：6.6 假 cred 页被回收的失效概率从 ~0.4% 回到 ~6%。
+- **环境自检 tracefs 判据修正**（9.456）：原来查 `events/kmem/*/enable`（Android 上 root-only，
+  永远 no）导致所有设备都报 BLOCKED。载荷其实只写 world-writable 的
+  `events/kmem/rss_stat/trigger` + `tracing_on` + 读 `trace_pipe_raw`，判据已改成这三条。
+- **恢复 `ksu_install_userspace()`**（9.453，撤销 9.448 的 no-op）：内核模块 `finit_module` 成功
+  但 `/data/adb/ksud` 没落地时，管理器会一直显示「未安装」。七步：拷 `.new` → chmod → mv →
+  mkdir → `<ksud> install` → `su`/`ksud` 软链。**这一段永久保留。**
+- **抢槽诊断**（9.454）：`exp.c` 新增 `self_cell_diag()`，失败时打 attempt / rc / errno /
+  got / want，而不是只有一行 `self cell install failed`。
+- **内置 profile 增**：vivo V2505A `6.12.58-android16-6-gdf8d34cadbf7-abogki584560711-4k`（9.446）、
+  Redmi 2510DRK44C `6.6.118-android15-8-g0908354dac1b-ab16143355-4k`（9.455）。
+  合计 139 条。都用官方 `boot.img` 离线算好（BTF + kallsyms + BL 反汇编），不需要在手机上标定。
+- **标定页**：日志区改成吃掉剩余高度、框内滚动（9.450，同时修掉「没 Shizuku 点环境自检 ANR」
+  —— Shizuku 连接与文件 IO 移到 `Dispatchers.IO`）；顺序归位（9.449）；链路推荐大字先加后删（9.447→9.452）。
+- **删除「查询固件包」整条功能**（9.451 及其前身）：`FirmwareActivity` / `FirmwareCatalog` /
+  `FirmwareBootExtractor` / `IknowResolver` / `iknow.tsv` 全部移除，顺带清掉一批死代码
+  （APK 11.07 MB → 10.60 MB）。
+- 载荷 124,984 B sha256 `6530b75fdaa340a8f5b0baf51bc2c1ee9c65fb7a9751c9287f44c06f246c4b22`。
+- APK 10,596,571 B sha256 `032050fcb64dbf4051f75a1bf47eb9f852037d744a734ed7f8868a1b11cb1b72`。
+- 验证：`chk9457.py` 14/14、单测 234 tests / 0 fail / 4 skip；真机只验了 tracefs 判据（READY）与布局。
+
 ## 9.444 — tracefs 补回 outq disarm（治 panic）+ 内置 6.12.69 profile
 
 - **修 panic**：`tracefs` 分支在 exec 管理器 CLI 前恢复 `outq[0]/outq[1]` 置 NULL。

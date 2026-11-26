@@ -290,74 +290,16 @@ internal class RunModel(app: Application) : AndroidViewModel(app) {
                 log("==== start: one-tap extract (uid0) ====")
                 log("· manager: $managerPkg")
                 val mode = Modes.byId("chain_uid0")
-                // 9.217: remember boot_id + uptime of this attempt. A run that ends with the
-                // kernel crashing reboots the device; retrying then is not free, it just rolls
-                // the same dice once more (and burns another reboot).
-                // 9.359：只有真 uuid 才算 boot_id，Shizuku 掉线时这条命令会回异常文本。
-                val bootBefore = ExtractEngine.bootIdOf(
-                    Shell.exec("cat /proc/sys/kernel/random/boot_id 2>/dev/null").second
-                )
-                val upBefore = android.os.SystemClock.elapsedRealtime()
-                var outcome = engine.run(mode, false, ::stage, managerPkg, safeMode)
+                // 9.445: one tap = one run.
+                // The automatic retry never bought anything: exp.bootid is written before
+                // arming, so fire_guard() refuses the second round on the same boot
+                // ("boot ... already ran a fire run") and the App mapped that to PARKED -
+                // a misleading log that looked like an anchor was parked.
+                val outcome = engine.run(mode, false, ::stage, managerPkg, safeMode)
                 log("---- result: ${outcome.stage} ok=${outcome.ok} ----")
-                // 6.6 的假 cred 页有概率被内核回收后装满别的对象，uid 读到脏值，
-                // 这一趟必然失败；重跑一次就是全新子进程 + 全新假 cred 页，
-                // 实测能把这一类的失效率从 ~6% 压到 ~0.4%。
-                // 不允许重跑的只有「已放弃写入/驻留等重启」这类现场（重跑会踩同一页）。
-                var attempt = 1
-                // 9.347：失败就是可以再跑——不再限制「每次只能跑一趟」，也不再默认关掉
-                // 自动重跑。只有四种现场会停：需要重启的 stage（重跑会踩同一页）、
-                // 跑到一半已经重启（内核崩了）、本机已经成功过（SAME_BOOT，写已释放对象）、
-                // 以及用户自己把 allow_retry 关掉。
-                val allowRetry = getApplication<Application>()
-                    .getSharedPreferences("run", Context.MODE_PRIVATE)
-                    .getBoolean("allow_retry", true)
-                while (!outcome.ok && allowRetry) {
-                    val bad = outcome.stage
-                    // 9.218：payload 现在「没有页级证据就不写」，这一刻它会把上一趟的
-                    // 牺牲线程留在驻留状态（zombie held），同一开机内再来一次只会再攒一个。
-                    // 9.425：回到上游 —— armed 之后 payload 永不退出（park_holder 常驻），
-                    // 同一开机的第二次 fire 会被它自己的 PARKED 挡住。这几种现场重跑只会再攒
-                    // 一个驻留对象，直接停，提示重启。
-                    if (bad.contains("PARKED") || bad.contains("held") || bad.contains("zombie") ||
-                        bad.contains("no page window") || bad.contains("fake cred write failed")
-                    ) {
-                        log("[retry] stop: $bad - payload is parked (upstream behaviour); reboot before another run")
-                        break
-                    }
-                    // 9.359：同一套判据，但读到的文本必须先过 uuid 校验。之前直接拿 trim()
-                    // 的文本比，Shizuku 一断线就得到 "Shizuku not running ..."，跟旧值永远
-                    // 不等 → 误判「内核崩了重启」并跳过重跑（日志里那句
-                    // "boot caf9930c -> Shizuku , "）。
-                    val bootNow = ExtractEngine.bootIdOf(
-                        Shell.exec("cat /proc/sys/kernel/random/boot_id 2>/dev/null").second
-                    )
-                    val upNow = android.os.SystemClock.elapsedRealtime()
-                    val rebooted = (bootBefore.isNotEmpty() && bootNow.isNotEmpty() && bootNow != bootBefore) ||
-                        upNow < upBefore
-                    if (bootNow.isEmpty() && !(upNow < upBefore))
-                        log("[retry] boot_id unreadable; assuming the same boot and retrying")
-                    if (rebooted) {
-                        log(
-                            "[retry] skip: device rebooted during the run (boot " + bootBefore.take(8) +
-                                " -> " + bootNow.take(8).ifEmpty { "?" } + ", uptime " + (upNow / 1000) +
-                                "s) - the kernel crashed"
-                        )
-                        break
-                    }
-                    // 9.371: the retry path calls engine.run() directly, so when Shizuku died mid-chain
-                    // every round burned three bind attempts and still got nowhere. Two stops:
-                    // no shell at all, and a hard cap on rounds.
-                    if (!Shell.connected()) {
-                        log("[retry] stop: shell is gone (" + (Shell.error() ?: "Shizuku down") + "); start it again then retry")
-                        break
-                    }
-                    attempt++
-                    log("[retry] attempt $attempt (previous: $bad)")
-                    Thread.sleep(600)
-                    stage = "retry $attempt"
-                    outcome = engine.run(mode, false, ::stage, managerPkg, safeMode)
-                    log("---- result(try $attempt): ${outcome.stage} ok=${outcome.ok} ----")
+                // 9.455 (m10301): 整轮被 PARKED 挡住时给一句能看懂的话
+                if (outcome.stage.endsWith(":PARKED")) {
+                    log("! 本次开机已尝试过一次且失败；本次开机只允许触发一次，请重启手机后再试")
                 }
                 if (!outcome.detail.isBlank()) log(outcome.detail)
                 // hasRootNow() 依赖 Shizuku shell 还活着；链路自己已经读到

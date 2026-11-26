@@ -41,14 +41,6 @@ data class Env(
     private fun yn(b: Boolean) = if (b) "ok" else "n/a"
 }
 
-/**
- * 9.421：pkill -f 用的正则。点等非字母数字字符要包成字符组 —— 否则 'sh -c "pkill -f eksu.bin"'
- * 这条命令行里也有 eksu.bin，正则会把发起 kill 的 shell 自己一起匹配掉。
- * 9.425：回到上游 —— payload 一旦 armed 就不退出，App 不再提供「停止」，这个正则留作备用。
- */
-internal fun killRegex(name: String): String =
-    name.map { c -> if (c.isLetterOrDigit() || c == '_' || c == '-') c.toString() else "[" + c + "]" }
-        .joinToString("")
 
 data class Outcome(
     val ok: Boolean,
@@ -76,7 +68,7 @@ class ExtractEngine(
         /** 9.328: reference chain binary (real_cred) plus the profile it loads. */
         private const val WACOM_BIN = "eksu.bin"
         private const val WACOM_PATH = "/data/local/tmp/eksu.bin"
-        private const val WACOM_SIZE = 126256
+        private const val WACOM_SIZE = 124984
         private const val CHAIN_DIR = "/data/local/tmp/eksu"
         private const val RUN_LOG = CHAIN_DIR + "/run.log"
         private const val PROFILE_ASSET = "payload/wacom/profile-6.6.json"
@@ -115,11 +107,9 @@ class ExtractEngine(
             "6.1.157-android14-11-g19a495a97bff"
                 to Triple("payload/wacom/ko-syms-6.1.157-android14-11-g19a495a97bff.txt", 7333, "8e5f31e7384a38db75d9adc457ef6fc809b811df4e6673bd1baa7c7e3aab8d32"),
         )
-        private const val PROFILE_PATH = CHAIN_DIR + "/profile.json"   // kept for reference; 9.331 uses chainDir
         private const val FALLBACK_PROFILE_PATH = "/data/local/tmp/eksu-profile.json"
         private const val FALLBACK_CHAIN_DIR = "/data/local/tmp/eksu-work"
         private const val PROFILE_SIZE = 3162
-        private const val PROFILE_SHA = "5e6809b219280ce68d35d4a6c1fadb88a17db6da9d281de35059591c7beb70c2"
         private const val STAGE_DONE = "/data/local/tmp/eksu.stage.done"
         // 9.376: a failed run leaves a uid=0 service holder behind these files.
         /** 9.300：payload 在 slide 不对齐（预设与内核不匹配）时写的自证文件。 */
@@ -490,6 +480,10 @@ class ExtractEngine(
             last = out
             if (!out.ok) {
                 log("! step ${index + 1} failed (${out.stage}); chain aborted")
+                // 9.455 (m10301): 被 PARKED / exp.bootid 拦住时说清楚是"本次开机已经试过一次"
+                if (out.stage == "WACOM_PARKED_BOOT") {
+                    log("! 本次开机已尝试过一次且失败（PARKED 标记 + exp.bootid 都在）；本次开机只允许触发一次，请重启手机后再试")
+                }
                 return@withContext out.copy(
                     // 9.376: keep the reboot-class code visible to the retry gate in
                     // RunModel ("PARKED" there), which only sees this string.
@@ -849,13 +843,6 @@ payload 只会用编译期常量（6.6.118 那套），在别的内核上跑不�
 
     // ---------------------------------------------------------------- late-load / deploy helpers
 
-    /** 9.292: the stage's own log, read back with the shell channel's own uid. */
-    suspend fun collectKsuStageLog(): String = withContext(Dispatchers.IO) {
-        runCatching {
-            val r = Shell.exec("cat " + KSU_STAGE_OUT + " 2>/dev/null")
-            if (r.first == 0) r.second.trim() else ""
-        }.getOrDefault("")
-    }
 
     private fun isRooted(verify: List<String>): Boolean =
         verify.firstOrNull { it.startsWith("su \u2192") }?.contains("uid=0") == true
@@ -936,19 +923,6 @@ payload 只会用编译期常量（6.6.118 那套），在别的内核上跑不�
         out.lineSequence().filter { it.isNotBlank() }.forEach { log("  [diag] " + it) }
     }
 
-    private fun wacomBuildArg(kernel: String): String? = WacomPreset.pick(kernel)
-
-    private fun probeWacomPath() {
-        val out = Shell.exec(
-            "ls -ld " + WACOM_PATH + " 2>&1; ls -l /data/local/tmp/eksu* 2>&1 | head -6; " +
-                "df -h /data/local/tmp 2>&1 | tail -1; id 2>&1; getenforce 2>&1",
-        ).second
-        if (out.isBlank()) {
-            log("  [probe] (no output; the shell itself is gone)")
-            return
-        }
-        out.lineSequence().filter { it.isNotBlank() }.forEach { log("  [probe] " + it) }
-    }
 
     private fun verifyBytes(path: String, wantSize: Int, wantSha: String): Boolean {
         val out = Shell.exec("wc -c < " + path + " 2>/dev/null; sha256sum " + path + " 2>/dev/null").second
@@ -962,24 +936,6 @@ payload 只会用编译期常量（6.6.118 那套），在别的内核上跑不�
     private fun assetBytes(asset: String): ByteArray? =
         runCatching { ctx.assets.open(asset).use { it.readBytes() } }.getOrNull()
 
-    private fun pushAssetBytes(asset: String, dest: String, wantSize: Int, wantSha: String): Boolean {
-        val bytes = assetBytes(asset)
-        if (bytes == null) {
-            log("! asset missing: assets/" + asset)
-            return false
-        }
-        if (bytes.size != wantSize || !sha256Hex(bytes).equals(wantSha, ignoreCase = true)) {
-            log("! asset mismatch: size=" + bytes.size + " sha256=" + sha256Hex(bytes) + " (want " + wantSize + " / " + wantSha + ")")
-            return false
-        }
-        Shell.exec("rm -f " + dest)
-        val pushed = Shell.pushFile(dest, bytes, executable = false)
-        if (pushed.first != 0) {
-            log("! push failed (" + dest + "): " + pushed.second.trim())
-            return false
-        }
-        return verifyBytes(dest, wantSize, wantSha)
-    }
 
     private fun pushAssetWithFallback(asset: String, wantSize: Int, wantSha: String, dest: String): String? {
         val bytes = assetBytes(asset)
@@ -1070,6 +1026,19 @@ payload 只会用编译期常量（6.6.118 那套），在别的内核上跑不�
         return true
     }
 
+    /** 部署完 wacom 载荷后把设备上的落地情况打出来（路径/权限/存储/id/getenforce）。 */
+    private fun probeWacomPath() {
+        val out = Shell.exec(
+            "ls -ld /data/local/tmp/eksu.bin 2>&1; ls -l /data/local/tmp/eksu* 2>&1 | head -6; " +
+                "df -h /data/local/tmp 2>&1 | tail -1; id 2>&1; getenforce 2>&1",
+        ).second
+        if (out.isBlank()) {
+            log("  [probe] (no output; the shell itself is gone)")
+            return
+        }
+        out.lineSequence().filter { it.isNotBlank() }.forEach { log("  [probe] " + it) }
+    }
+
     private fun deployWacomBinary(bytes: ByteArray, want: String): Boolean {
         if (pushAndVerify(WACOM_PATH, WACOM_PATH, bytes, want)) return true
         log("\u00b7 wacom deploy: direct write failed; retrying through a staged copy")
@@ -1158,51 +1127,7 @@ payload 只会用编译期常量（6.6.118 那套），在别的内核上跑不�
         return null
     }
 
-    private fun deployProfileAsset(dir: String): String? {
-        val dest = dir + "/profile.json"
-        if (pushAssetBytes(PROFILE_ASSET, dest, PROFILE_SIZE, PROFILE_SHA)) return dest
-        log("\u00b7 profile deploy: binder push failed; retrying with one base64 write")
-        val bytes = assetBytes(PROFILE_ASSET)
-        if (bytes == null) {
-            log("! asset missing: assets/" + PROFILE_ASSET)
-            return null
-        }
-        val b64 = android.util.Base64.encodeToString(bytes, android.util.Base64.NO_WRAP)
-        for (d in listOf(dest, FALLBACK_PROFILE_PATH)) {
-            Shell.exec("mkdir -p " + d.substringBeforeLast('/') + " 2>/dev/null; rm -f " + d + " 2>/dev/null")
-            val r = Shell.exec("echo " + b64 + " | base64 -d > " + d + " 2>/dev/null; echo rc=\$?")
-            val size = one("wc -c < " + d + " 2>/dev/null").takeWhile { it.isDigit() }
-            val sha = one("sha256sum " + d + " 2>/dev/null").substringBefore(' ')
-            log("\u00b7 profile via base64 -> " + d + ": " + r.second.trim() + " size=" + size + " sha256=" + sha)
-            if (size == PROFILE_SIZE.toString() && sha.equals(PROFILE_SHA, ignoreCase = true)) return d
-        }
-        log("! profile deploy: base64 write failed on both paths")
-        return null
-    }
 
-    private fun deployProfileLegacy(dir: String, kernel: String): String? {
-        val cal = WacomCalibStore.bytesFor(ctx, kernel)
-        if (cal != null && cal.isNotEmpty()) {
-            log("\u00b7 profile: in-app calibration (" + cal.size + " B) for " + kernel)
-            val r = pushProfileBytes(dir + "/wacom.profile", cal)
-            if (r != null) return r
-            log("! profile: calibrated bytes could not be pushed; falling back to the built-in one")
-        }
-        val e = WacomBuiltin.forKernel(kernel)
-        if (e != null) {
-            val bytes = WacomBuiltin.bytes(ctx, e)
-            if (bytes != null && bytes.isNotEmpty()) {
-                log("\u00b7 profile: built-in (" + bytes.size + " B) for " + kernel)
-                val r = pushProfileBytes(dir + "/wacom.profile", bytes)
-                if (r != null) return r
-                log("! profile: built-in bytes could not be pushed; falling back to the legacy asset")
-            }
-        }
-        if (assetBytes(PROFILE_ASSET) == null) {
-            log("! profile: built-in asset is missing or not the pinned bytes: " + PROFILE_ASSET)
-        }
-        return deployProfileAsset(dir)
-    }
 
     /** 9.331: the chain wants <workdir>/wacom.profile plus <workdir>/ko-syms-<release>.txt. */
     private fun deployProfile(dir: String, kernel: String, mgr: String): String? {

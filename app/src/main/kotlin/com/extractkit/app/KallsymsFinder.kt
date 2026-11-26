@@ -35,7 +35,6 @@ object KallsymsFinder {
         val numSyms: Int,
         val relativeBase: Long,
         val markersOffset: Int,
-        val namesOffset: Int,
     )
 
     private const val MIN_MARKERS = 128
@@ -108,7 +107,7 @@ object KallsymsFinder {
         if (symbols.isEmpty()) return null
         if (!sanityOk(symbols, base)) return null
         onProgress("符号 ${symbols.size} 个，base=${hex(base)}（新布局）")
-        return Result(symbols, count, base, markersOff, namesStart)
+        return Result(symbols, count, base, markersOff)
     }
 
     // ------------------------------------------------------- 布局 B（6.1/5.15）
@@ -160,7 +159,7 @@ object KallsymsFinder {
             return null
         }
         onProgress("符号 ${symbols.size} 个，base=${hex(base)}（旧布局）")
-        return Result(symbols, count, base, markersOff, namesStart)
+        return Result(symbols, count, base, markersOff)
     }
 
     // ----------------------------------------------- 布局 C（4.19/5.4 绝对地址表）
@@ -205,7 +204,7 @@ object KallsymsFinder {
             return null
         }
         onProgress("符号 ${symbols.size} 个，base=${hex(base)}（绝对地址表）")
-        return Result(symbols, count, base, markersOff, namesStart)
+        return Result(symbols, count, base, markersOff)
     }
 
     /**

@@ -72,7 +72,7 @@ class ConfigProfileTest {
 
     @Test
     fun allBuiltinProfilesProduceValidCfg() {
-        assertEquals("应内置 137 个内核 profile（76 本地标定 + 26 服务器档案 + 35 服务器补充）", 137, ConfigGen.PROFILES.size)
+        assertEquals("应内置 139 个内核 profile（76 本地标定 + 26 服务器档案 + 35 服务器补充 + 2 离线内置）", 139, ConfigGen.PROFILES.size)
         for (p in ConfigGen.PROFILES) {
             val blob = ConfigGen.emitCfgBlob(p.symbols, p.offsets, p.measured)
             assertTrue("${p.name} 的 cfg 至少 336 B", blob.size >= 336)
@@ -290,5 +290,21 @@ class ConfigProfileTest {
                 ranks[i] <= ranks[i - 1],
             )
         }
+    }
+
+    @Test
+    fun v2505aOfflineProfileIsWired() {
+        val p = ConfigGen.PROFILES.first { it.prefix.startsWith("6.12.58-android16-6-gdf8d34cadbf7") }
+        assertEquals("prefix 必须唯一命中", 1, ConfigGen.PROFILES.count { it.prefix == p.prefix })
+        assertEquals(p.prefix, ConfigGen.profileFor(p.release)?.prefix)
+        assertEquals("V2505A 的 kallsyms 解出 128,946 条，do_timer_create 也来自同一份",
+            0xFFFFFFC080517B40uL.toLong(), p.symbols.getValue("do_timer_create"))
+        assertEquals(0xAC, p.measured.timerSiteOffset)          // do_timer_create+0xa8 bl → 返址 +0xac
+        assertEquals(0x19B1FC, p.measured.credSiteLow21)        // prepare_creds+0x28 bl → 返址 +0x2c
+        assertEquals(0x1F2938, p.measured.taskAllocLow21)       // copy_process+0x13c bl → 返址 +0x140
+        assertEquals(0x1440, p.measured.taskAllocBytes)         // BTF: sizeof(task_struct)
+        assertEquals(0xB8, p.offsets.credSize)                  // BTF: sizeof(struct cred)
+        assertEquals(0x100, p.offsets.itimerSize)               // BTF: sizeof(struct k_itimer)
+        assertEquals(7, p.schedAnchors.size)
     }
 }

@@ -137,6 +137,11 @@ object EnvProbe {
         var tfTrace = w("trace")
         var tfOn = w("tracing_on")
         var tfEvEnable = w("events/kmem/kmem_cache_alloc/enable")
+        // 9.456 (m10454): 载荷真正的 tracefs 前提只有这一个文件 ——
+        // exp.c:2994 trace_prepare() 写的是 events/kmem/rss_stat/trigger
+        // 里的 enable_event:kmem:kmem_cache_alloc。events/kmem/*/enable 在
+        // Android 上是 root-only（永远是 no），载荷根本不碰它。
+        var tfTrigger = w("events/kmem/rss_stat/trigger")
         var tfRaw = "no"
         line("trace_writable=" + tfTrace)
         line("tracing_on_writable=" + tfOn)
@@ -150,6 +155,9 @@ object EnvProbe {
             line("ev_" + ev + "_enable_w=" + w("events/kmem/" + ev + "/enable")
                 + " filter_w=" + w("events/kmem/" + ev + "/filter"))
         }
+        line("ev_rss_stat_trigger_w=" + tfTrigger + " mode=" + sh(
+            "ls -l " + tfBase + "/events/kmem/rss_stat/trigger 2>&1 | cut -c1-10",
+        ).trim())
         line("ev_cache_alloc_format=" + sh(
             "grep -m6 'field:' " + tfBase + "/events/kmem/kmem_cache_alloc/format 2>/dev/null",
         ).lines().map { it.trim() }.filter { it.isNotEmpty() }.joinToString(" ; ").take(300))
@@ -536,11 +544,13 @@ object EnvProbe {
 
         // 结论行：把「下一步该走哪条路」直接写进去，省得回来再问一遍。
         val rndOn = km.isNotEmpty() && rnd.isNotEmpty()
-        val tfReady = tfTrace == "yes" && tfOn == "yes" && tfEvEnable == "yes" && tfRaw == "yes"
+        val tfReady = tfTrace == "yes" && tfOn == "yes" && tfTrigger == "yes" && tfRaw == "yes"
         line("")
         line("## gates")
         line("gate_tracefs=trace_w=" + tfTrace + " tracing_on_w=" + tfOn
-            + " ev_enable_w=" + tfEvEnable + " trace_pipe_raw_r=" + tfRaw + " => " + (if (tfReady) "READY" else "BLOCKED"))
+            + " rss_trigger_w=" + tfTrigger + " trace_pipe_raw_r=" + tfRaw
+            + " (info: ev_enable_w=" + tfEvEnable + " 是 root-only，不参与判定)"
+            + " => " + (if (tfReady) "READY" else "BLOCKED"))
         line("gate_uaf=uhid_w=" + sh("test -w /dev/uhid && echo yes || echo no").trim()
             + " uinput_w=" + sh("test -w /dev/uinput && echo yes || echo no").trim())
         line("gate_uhid=" + uhidState)
@@ -558,13 +568,14 @@ object EnvProbe {
         } else {
             line("verdict=SHARED_KMALLOC: 可以靠 spray_len / CPU pin 抢槽")
             if (tfReady) {
-                line("tracefs=READY: 四道门都开（trace/tracing_on/kmem_cache_alloc enable/trace_pipe_raw）")
-                line("next=删 PARKED 并重启后先试 tracefs 分支；它的 bootstrap 与 no-tracefs 相同，仍要过抢槽这一关")
+                line("tracefs=READY: rss_stat/trigger 可写 + tracing_on 可写 + trace_pipe_raw 可读")
+                line("next=重启后可以直接走 tracefs（real_cred）分支；它照样要过抢槽这一关")
             } else {
-                line("tracefs=BLOCKED: 有门没开，跑 tracefs 会先死在 trace prepare / cred leak")
+                line("tracefs=BLOCKED: rss_stat/trigger 写不进 或 tracing_on 不可写 或 trace_pipe_raw 读不到")
                 line("next=按 same_cache 选 spray_len 或走同源再分配；tracefs 先别试")
             }
-            if (parkedSame) line("fire=PARKED_SAME_BOOT: 上一趟留了标记；上游一次开机只 fire 一次，重启后再来")
+            // 9.455 (m10301): 让"本 boot 已烧"这件事一眼能看懂
+            if (parkedSame) line("fire=PARKED_SAME_BOOT: 本次开机已尝试过一次且失败（PARKED 标记与 exp.bootid 都在）；一次开机只允许触发一次，请重启手机后再试")
         }
         sb.toString()
     }

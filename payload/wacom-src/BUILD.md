@@ -1,21 +1,22 @@
-# payload/wacom-src —— CVE-2026-99491 链的原生载荷
+# wacom payload source (9.457)
 
-产物就是 App 里的 `app/src/main/assets/payload/wacom/ek-w1-uid0-6.6`（单个静态 ELF，
-设备上由 App 推送到 `/data/local/tmp/eksu.bin` 执行）。
+这几个文件就是 `app/src/main/assets/payload/wacom/ek-w1-uid0-6.6` 的源码，
+用 NDK r29 静态编译成单文件 PIE（aarch64），构建命令见下。
 
+## 构建
 ```
-aarch64-linux-android24-clang -O2 -g -Wall -Wextra -Wno-unused-parameter \
-  -fPIE -fstack-protector-strong -pie \
-  -o build/exp.exe exp.c ko_patch.c ksu_boot.c
-llvm-strip --strip-all build/exp.exe
+NDK=/path/to/android-ndk-r29/toolchains/llvm/prebuilt/<host>/bin
+CC=$NDK/aarch64-linux-android24-clang
+$CC -O2 -g -Wall -Wextra -Wno-unused-parameter -fPIE -I . -c exp.c
+$CC -O2 -g -Wall -Wextra -Wno-unused-parameter -fPIE -I . -c ksu_boot.c
+$CC -O2 -g -Wall -Wextra -Wno-unused-parameter -fPIE -I . -Dmain=ko_patch_cli -c ko_patch.c
+$CC -pie -pthread -o ek-w1-uid0-6.6 exp.o ksu_boot.o ko_patch.o
+$NDK/llvm-strip --strip-all ek-w1-uid0-6.6
 ```
 
-- `exp.c`：主利用。uinput 的 4 字节链式写 + tracepoint/slab 回收定位 `uhid` 的
-  `input_buf`，伪造 cred 后把 uid/euid/fsuid 与 cap 集写成 0/满，再交给 `ksu_boot.c`
-  让管理器自己的 CLI 去 `late-load`。
-- `ko_patch.c`：内核模块 elf 的符号重定位补丁（KernelSU 的 kernelsu.ko 按 KMI 取）。
-- `ksu_boot.c`：KernelSU 引导层。argv 是
-  `late-load --post-magica --allow-shell --package-name <管理器包名>`，
-  装用户态走 `ksud.new -> mv -f /data/adb/ksud` + `/data/adb/ksud install`。
+产物当前 124,984 B，sha256 `6530b75fdaa340a8f5b0baf51bc2c1ee9c65fb7a9751c9287f44c06f246c4b22`。
 
-运行时读 `/data/local/tmp/eksu/wacom.profile`（App 生成，按内核 build 的常量）。
+## 9.457 相对 9.444 的载荷变化
+- 9.453：`ksu_boot.c` 恢复 `ksu_install_userspace()`（9.448 曾按「ksud 归管理器管」整段换成 no-op，
+  结果内核模块虽然 finit_module 成功、用户态 /data/adb/ksud 却没落地，管理器始终显示「未安装」）。
+- 9.454：`exp.c` 加 `self_cell_diag()`，抢槽失败时打印 attempt/rc/errno/got/want，不再只有一行 failed。

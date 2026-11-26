@@ -845,7 +845,8 @@ static int module_live(const struct cve99491_profile *prof)
 /* 9.378: ksud late-load calls daemonize() first, so the exec'd parent exits 0
  * in a few ms and the real work happens in a detached child whose stdio is
  * /dev/null. "rc=0" therefore proves nothing: poll /proc/modules instead. */
-static int ksu_wait_module(const struct cve99491_profile *prof, long ms)
+/* 9.448: kept for the historical /proc/modules gate; unused since 9.439. */
+static int __attribute__((unused)) ksu_wait_module(const struct cve99491_profile *prof, long ms)
 {
     long t0 = ksu_now_ms();
     int last = -1;
@@ -1123,7 +1124,14 @@ int ksu_cache_prepare(const struct cve99491_profile *prof)
     return ksu_cache_ensure(&c);
 }
 
-/* Install the ksud userspace while still permissive and uid 0. */
+/* Install the ksud userspace while still permissive and uid 0.
+ *
+ * 9.453: restored verbatim (user m10085).  9.448 had gutted this into a no-op
+ * on the theory that the manager owns "ksud", but that also stopped
+ * /data/adb/ksud, /data/adb/ksu/bin and /data/adb/modules from ever coming
+ * into existence, and the manager then reports "not installed" forever.  The
+ * module load stays the verdict (see ksu_late_load_ksud), this side just puts
+ * the userspace in place first, exactly as 9.395 did. */
 static int ksu_install_userspace(const struct cve99491_profile *prof,
                                  const struct ksu_features *feat,
                                  const char *work)
@@ -1143,56 +1151,70 @@ static int ksu_install_userspace(const struct cve99491_profile *prof,
         return 1;
     }
 
-    /* Core userspace installation.  9.395: the CLI that late-load started is
-     * still executing <ksud>, so a plain cp over that path dies with ETXTBSY;
-     * stage the copy as <ksud>.new and rename it over the old one.  The two
-     * symlinks use rm+ln so a stale entry cannot swallow the step.  Every
-     * failure here is reported, counted and then ignored: the module is already
-     * live, which is the only verdict this file reports on. */
+    /* 9.395: the CLI that late-load started is still executing <ksud>, so a
+     * plain cp over that path dies with ETXTBSY; stage the copy as <ksud>.new
+     * and rename it over the old one.  The two symlinks use rm+ln so a stale
+     * entry cannot swallow the step.  Every failure here is reported, counted
+     * and then ignored: the module is already live, which is the only verdict
+     * this file reports on. */
     snprintf(qksudnew, sizeof qksudnew, "%.*s.new'", (int)(strlen(qksud) - 1),
              qksud);
     snprintf(cmd, sizeof cmd, "cp %s %s", qsrc, qksudnew);
+    printf("[ksu] stage: %s\n", cmd);
     if (run_sh(cmd, out, sizeof out, 10000) != 0) {
+        printf("[!] stage rc!=0: %s\n", out);
         fails++;
     }
     snprintf(cmd, sizeof cmd, "chmod 755 %s", qksudnew);
+    printf("[ksu] stage: %s\n", cmd);
     if (run_sh(cmd, out, sizeof out, 20000) != 0) {
+        printf("[!] stage rc!=0: %s\n", out);
         fails++;
     }
     snprintf(cmd, sizeof cmd, "mv -f %s %s", qksudnew, qksud);
+    printf("[ksu] stage: %s\n", cmd);
     if (run_sh(cmd, out, sizeof out, 20000) != 0) {
+        printf("[!] stage rc!=0: %s\n", out);
         fails++;
     }
     snprintf(cmd, sizeof cmd, "mkdir -p %s %s", qbin, qmods);
+    printf("[ksu] stage: %s\n", cmd);
     if (run_sh(cmd, out, sizeof out, 20000) != 0) {
+        printf("[!] stage rc!=0: %s\n", out);
         fails++;
     }
     snprintf(cmd, sizeof cmd, "%s install", qksud);
+    printf("[ksu] stage: %s\n", cmd);
     if (run_sh(cmd, out, sizeof out, 20000) != 0) {
+        printf("[!] stage rc!=0: %s\n", out);
         fails++;
     }
     snprintf(cmd, sizeof cmd, "rm -f %s/su && ln -s %s %s/su", qbin, qksud, qbin);
+    printf("[ksu] stage: %s\n", cmd);
     if (run_sh(cmd, out, sizeof out, 20000) != 0) {
+        printf("[!] stage rc!=0: %s\n", out);
         fails++;
     }
     snprintf(cmd, sizeof cmd, "rm -f %s/ksud && ln -s %s %s/ksud", qbin, qksud, qbin);
+    printf("[ksu] stage: %s\n", cmd);
     if (run_sh(cmd, out, sizeof out, 20000) != 0) {
+        printf("[!] stage rc!=0: %s\n", out);
         fails++;
     }
 
-    /* Manager feature settings are optional userspace policy: warn only.
-     * The module is live and ksud installed even if these are rejected. */
+    /* Manager feature settings are optional userspace policy: warn only. */
     snprintf(cmd, sizeof cmd, "%s feature set su_compat %d", qksud, su_compat);
+    printf("[ksu] stage: %s\n", cmd);
     if (run_sh(cmd, out, sizeof out, 20000) != 0)
         printf("[!] ksu: su_compat feature failed (non-fatal): %s\n", out);
     snprintf(cmd, sizeof cmd, "%s feature set shell_su_adb_only %d", qksud,
              adb_only);
+    printf("[ksu] stage: %s\n", cmd);
     if (run_sh(cmd, out, sizeof out, 20000) != 0)
         printf("[!] ksu: shell_su_adb_only feature failed (non-fatal): %s\n",
                out);
     return fails;
 }
-
 int ksu_load_main(const struct cve99491_profile *prof)
 {
     const char *sv = getenv("CVE99491_SLIDE");

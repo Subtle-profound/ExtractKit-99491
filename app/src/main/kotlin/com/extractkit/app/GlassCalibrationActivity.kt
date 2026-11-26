@@ -56,14 +56,6 @@ class GlassCalibrationActivity : ComponentActivity() {
             }
         }
 
-        // 从「查询固件包」页提取出来的 zip 直接进标定
-        LaunchedEffect(Unit) {
-            this@GlassCalibrationActivity.intent?.getStringExtra("boot_zip")?.let { p ->
-                val f = java.io.File(p)
-                if (f.isFile) vm.analyzeZip(contentResolver, f)
-            }
-        }
-
         GlassCalibrationScreen(
             backdrop = backdrop,
             model = vm,

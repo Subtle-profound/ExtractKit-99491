@@ -3,7 +3,7 @@
 一个 Android App（Kotlin + Jetpack Compose）+ 一份原生载荷，把「从内核漏洞拿到 uid 0，
 再让 KernelSU 接管」这件事做成可标定、可复用的流程。
 
-当前版本 **9.444**（versionCode 633），只在你拥有或明确获得授权的设备上使用。
+当前版本 **9.457**（versionCode 646），只在你拥有或明确获得授权的设备上使用。
 
 ## 它解决什么
 

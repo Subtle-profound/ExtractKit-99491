@@ -99,7 +99,7 @@ class ProfileGenTest {
                     taskAllocLow21 = ${cs?.taskLow21?.let { h(it) } ?: "0x1CB240"},
                     taskAllocBytes = ${h(btf?.sizeOf("task_struct") ?: 0x12C0)},
                     credReq = ${h(off.credSize)},
-                    credAlloc = ${h((off.credSize + 15) / 16 * 16)},
+                    credAlloc = ${h(ConfigGen.credSlabObjectBytes(off.credSize))},
                 ),
             ),
             """.trimIndent(),

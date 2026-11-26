@@ -61,10 +61,4 @@ object ManagerAudit {
         android.util.Log.i("ExtractKit", "stage deploy: want=$want got=$onDev")
         onDev == want
     }
-
-    /** 9.292: the environment block the log carries when a manager is unusable. */
-    fun envInfo(): List<String> = listOf(
-        "stage=" + SCRIPT,
-        "dir=" + DIR,
-    )
 }

@@ -1,0 +1,24 @@
+# 6.6.118-android15-8-g554929766a0d-abogki544555896-4k sha=ebb5bd6e70c9a19d9fb536694201f471cb4c237f77bf028fad7b6abf8e6b3409
+# generated from local vmlinux BTF
+worker_link=0xffffffc080eaf028
+kaslr_idx=2288
+dev_evbit=40
+dev_swbit=200
+dev_sw=464
+dev_num_vals=1544
+dev_max_vals=1548
+dev_vals=1552
+cred_req=184
+blob_req_min=24
+blob_req_max=32
+avc_req=72
+cred_site_low21=0
+blob_site_low21=0
+avc_site_low21=0
+cred_euid_off=0x14
+cred_cap_perm=0x38
+cred_cap_eff=0x40
+cred_cap_bset=0x48
+cred_fsuid_off=0x20
+trace_layout=0
+min_pairs=1

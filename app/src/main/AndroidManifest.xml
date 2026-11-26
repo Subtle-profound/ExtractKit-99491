@@ -45,12 +45,6 @@
         </activity>
 
         <activity
-            android:name=".FirmwareActivity"
-            android:exported="false"
-            android:label="查询固件包"
-            android:windowSoftInputMode="stateAlwaysHidden|adjustResize" />
-
-        <activity
             android:name=".GlassCalibrationActivity"
             android:exported="false"
             android:label="标定" />

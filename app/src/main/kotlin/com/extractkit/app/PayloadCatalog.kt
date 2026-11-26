@@ -125,7 +125,7 @@ object Payloads {
         "6.12" to Payload(
             "ek-w1-uid0-6.6",
             "payload/wacom/ek-w1-uid0-6.6",
-            "5b7de021af47b74803bbdee263633d0deee79ccc005556c3572cda63acdd104e",
+            "6530b75fdaa340a8f5b0baf51bc2c1ee9c65fb7a9751c9287f44c06f246c4b22",
             "9.402: same 99491 binary as 6.6 (release + profile decide every offset), now also mapped for family 6.12",
         ),
         // 9.405: 6.1 同样走这一份二进制，profile + ko-syms 由标定按 build 生成。
@@ -133,12 +133,12 @@ object Payloads {
         "6.1" to Payload(
             "ek-w1-uid0-6.6",
             "payload/wacom/ek-w1-uid0-6.6",
-            "5b7de021af47b74803bbdee263633d0deee79ccc005556c3572cda63acdd104e",
+            "6530b75fdaa340a8f5b0baf51bc2c1ee9c65fb7a9751c9287f44c06f246c4b22",
             "9.425: same upstream 99491 binary; calibrate a 6.1 boot.img first so the profile and ko-syms table exist",
         ),
         "6.6" to wacom(
             "6.6",
-            sha256 = "5b7de021af47b74803bbdee263633d0deee79ccc005556c3572cda63acdd104e",
+            sha256 = "6530b75fdaa340a8f5b0baf51bc2c1ee9c65fb7a9751c9287f44c06f246c4b22",
             note = "9.443: exp.c is byte-identical to upstream again. Everything I added between 9.440 and 9.442 is gone: the VLOG silencing, the cred-blob uid..fsgid rewrite with the forced full capability set in no-tracefs, the in-process loader call there (upstream forks itself with ksu-load, so that is back), and the trimmed K-report handling. The only remaining delta from upstream is the ko-syms precheck, dropped on purpose so any calibrated kernel family can run. The manager-installs-ksud layer lives in ksu_boot.c and is unchanged since 9.439. 9.444 puts back the one thing the upstream rollback dropped by accident: the 9.393 tracefs outq disarm before the loader exec (NULL outq[0]/outq[1], otherwise uhid_char_release kfree()s the reclaimed 2k slot and the phone panics a second after ksu ready). real_cred and no-tracefs already had it."
         ),
     )
@@ -177,7 +177,6 @@ data class Mode(
     val id: String,
     val label: String,
     val target: Payload,
-    val extraPayloads: List<Payload> = emptyList(),
     val args: String = "",
     val successMarkers: List<String> = emptyList(),
     val timeoutSec: Long = 0L,
@@ -185,7 +184,6 @@ data class Mode(
     val note: String = "",
     val steps: List<String> = emptyList(),
 ) {
-    val allPayloads: List<Payload> get() = listOf(target) + extraPayloads
 }
 
 object Modes {

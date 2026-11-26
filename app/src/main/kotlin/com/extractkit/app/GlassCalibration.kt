@@ -99,15 +99,15 @@ internal fun GlassCalibrationScreen(
     val snack = model.message
     LaunchedEffect(snack) { if (snack != null) model.consumeMessage() }
 
-    Box(Modifier.fillMaxSize()) {
-        Column(
-            Modifier
-                .fillMaxSize()
-                .windowInsetsPadding(WindowInsets.statusBars)
-                .verticalScroll(rememberScrollState())
-                .padding(horizontal = 16.dp)
-                .padding(top = 8.dp, bottom = 14.dp),
-        ) {
+    // 9.451: 顺序 信息卡 → 环境自检 → 解析日志（吃掉剩余高度、框内滚）→ 保存/导入/分享
+    // → 推荐大字。「查询固件包」整条功能已按 m09658 删除，入口不再出现。
+    Column(
+        Modifier
+            .fillMaxSize()
+            .windowInsetsPadding(WindowInsets.statusBars)
+            .padding(horizontal = 16.dp)
+            .padding(top = 8.dp, bottom = 14.dp),
+    ) {
             Row(verticalAlignment = Alignment.CenterVertically) {
                 Text("✕", fontSize = 22.sp, color = Sub, modifier = Modifier.clickable { onBack() })
                 Spacer(Modifier.width(14.dp))
@@ -174,7 +174,6 @@ internal fun GlassCalibrationScreen(
 
             Spacer(Modifier.height(10.dp))
 
-            // 9.414：环境自检顶到固件包入口原本的位置（该入口已删）
             GlassCard(backdrop) {
                 Line(
                     "环境自检",
@@ -186,7 +185,37 @@ internal fun GlassCalibrationScreen(
                 )
             }
 
-            Spacer(Modifier.height(10.dp))
+
+        Spacer(Modifier.height(10.dp))
+
+        // 解析日志：定高区域，内部滚动（9.447）
+        GlassCard(backdrop, Modifier.fillMaxWidth().weight(1f).heightIn(min = 140.dp)) {
+            Text("解析日志", fontSize = 15.sp, fontWeight = FontWeight.SemiBold, color = Ink)
+            Spacer(Modifier.height(6.dp))
+            val shown = model.logLines.takeLast(400)
+            Box(
+                Modifier
+                    .fillMaxWidth()
+                    .weight(1f)
+                    .clip(RoundedCornerShape(12.dp))
+                    .background(CalPal.codeBg)
+                    .padding(horizontal = 10.dp, vertical = 8.dp),
+            ) {
+                Text(
+                    if (shown.isEmpty()) "选一个 boot.img 开始" else shown.joinToString("\n"),
+                    fontSize = 11.sp,
+                    lineHeight = 15.sp,
+                    fontFamily = FontFamily.Monospace,
+                    color = CalPal.code,
+                    softWrap = true,
+                    modifier = Modifier
+                        .fillMaxSize()
+                        .verticalScroll(rememberScrollState()),
+                )
+            }
+        }
+
+        Spacer(Modifier.height(10.dp))
 
             Row(horizontalArrangement = Arrangement.spacedBy(10.dp)) {
                 listOf(
@@ -206,59 +235,6 @@ internal fun GlassCalibrationScreen(
                     ) { Text(label, fontSize = 14.sp, color = if (enabled) Ok else CalPal.broken) }
                 }
             }
-
-            Spacer(Modifier.height(10.dp))
-
-            // 9.414：解析日志放最下面（自检/解析结果都落这里，滚动到最后就能看）
-            GlassCard(backdrop) {
-                Text("解析日志", fontSize = 15.sp, fontWeight = FontWeight.SemiBold, color = Ink)
-                Spacer(Modifier.height(6.dp))
-                val shown = model.logLines.takeLast(200)
-                Box(
-                    Modifier
-                        .fillMaxWidth()
-                        .clip(RoundedCornerShape(12.dp))
-                        .background(CalPal.codeBg)
-                        .padding(horizontal = 10.dp, vertical = 8.dp),
-                ) {
-                    Text(
-                        if (shown.isEmpty()) "选一个 boot.img 开始" else shown.joinToString("\n"),
-                        fontSize = 11.sp,
-                        lineHeight = 15.sp,
-                        fontFamily = FontFamily.Monospace,
-                        color = CalPal.code,
-                        softWrap = true,
-                        modifier = Modifier
-                            .fillMaxWidth()
-                            .heightIn(max = 260.dp)
-                            .verticalScroll(rememberScrollState()),
-                    )
-                }
-            }
-        }
     }
 }
 
-@Composable
-internal fun GlassRunningScreen(onClose: () -> Unit) {
-    Box(
-        Modifier
-            .fillMaxSize()
-            .background(androidx.compose.ui.graphics.lerp(Color.White, Color(0xFF070A14), EkTheme.mixCoarse)),
-        contentAlignment = Alignment.Center,
-    ) {
-        Column(horizontalAlignment = Alignment.CenterHorizontally) {
-            Text("正在提权…", fontSize = 20.sp, fontWeight = FontWeight.SemiBold, color = Ink)
-            Spacer(Modifier.height(8.dp))
-            Text("执行完成后会自动打开根管理器", fontSize = 13.sp, color = Sub)
-            Spacer(Modifier.height(20.dp))
-            Box(
-                Modifier
-                    .clip(RoundedCornerShape(22.dp))
-                    .background(CalPal.divider)
-                    .clickable { onClose() }
-                    .padding(horizontal = 26.dp, vertical = 12.dp),
-            ) { Text("关闭", fontSize = 14.sp, color = Sub) }
-        }
-    }
-}

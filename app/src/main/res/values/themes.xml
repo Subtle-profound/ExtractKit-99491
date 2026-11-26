@@ -18,13 +18,6 @@
         <item name="android:enforceNavigationBarContrast" tools:targetApi="29">false</item>
     </style>
 
-    <!-- 列表行：标签（上）与值（下） -->
-
-    <style name="CardTitle">
-        <item name="android:textColor">@color/text</item>
-        <item name="android:textSize">15sp</item>
-        <item name="android:textStyle">bold</item>
-    </style>
     <style name="Theme.ExtractKit.Glass" parent="Theme.ExtractKit">
         <item name="android:windowBackground">@android:color/white</item>
         <item name="android:statusBarColor">@android:color/transparent</item>

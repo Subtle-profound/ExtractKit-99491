@@ -91,7 +91,7 @@ class AltCalibTest {
             taskAllocLow21 = cs?.taskLow21 ?: 0,
             taskAllocBytes = o.taskCred + 0xA0,
             credReq = o.credSize,
-            credAlloc = (o.credSize + 15) / 16 * 16,
+            credAlloc = ConfigGen.credSlabObjectBytes(o.credSize),
         )
         val cfg = runCatching { ConfigGen.emitCfgBlob(syms, o, m) }.getOrNull()
         assertNotNull("emitCfgBlob 失败", cfg)

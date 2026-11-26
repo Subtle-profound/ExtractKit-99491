@@ -1468,8 +1468,6 @@ internal fun VividBackdropLayer(backdrop: com.kyant.backdrop.backdrops.LayerBack
     // 现在满屏模糊已去掉，phase 直接按帧使用（draw 阶段读取，不触发重组）。
     // phase 与主题连续量都在 draw 阶段读取：只在绘制失效里重绘，
     // 不触发重组，切换动画才排得进 120Hz 的帧预算。
-    // 复用同一个 Path：揭示圆每帧都在动，别每帧新建对象
-    val oval = androidx.compose.runtime.remember { Path() }
     // 白天底图与夜色各录一份绘制命令：只有 phase 换档（约 5 fps）时才重录，
     // 其余帧只是重放记录 —— 切换动画期间不再每帧新建十几个渐变色打着色器。
     val steadyDay = androidx.compose.runtime.remember {

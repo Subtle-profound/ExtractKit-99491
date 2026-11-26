@@ -124,31 +124,39 @@ class CalibrationModel(app: Application) : AndroidViewModel(app) {
         if (probing) return
         probing = true
         viewModelScope.launch {
-            // 9.413: 没连 Shizuku 就不跑 —— 没有 shell 读不到 slab/profile/tracefs，采出来的半份报告只会误导
-            if (!Shell.connected()) {
-                log("· env probe: 连接 Shizuku ...")
-                runCatching { Shell.connect(getApplication()) }
+            val app = getApplication<Application>()
+            // 9.450: 连接 Shizuku 是阻塞调用（没装/没授权时要等 bind + 超时），以前整段跑在主线程，
+            // 一点「环境自检」就 ANR。现在连接和采集都挪进 IO，主线程只读状态。
+            log("· env probe: 连接 Shizuku ...")
+            val connected = withContext(Dispatchers.IO) {
+                runCatching {
+                    if (!Shell.connected()) Shell.connect(app)
+                    Shell.connected()
+                }.getOrDefault(false)
             }
-            if (!Shell.connected()) {
+            if (!connected) {
                 log("! env probe: Shizuku 未连接，先授权再点")
                 probing = false
                 message = "先连上 Shizuku 再点「环境自检」（没有 shell 采不到 slab / profile）"
                 return@launch
             }
             log("· env probe: shell 就绪，开始采集（slab / profile / tracefs）")
-            val text = runCatching { EnvProbe.collect() }.getOrElse { t ->
-                "! env probe 失败：" + t.javaClass.simpleName + ": " + (t.message ?: "")
+            val text = withContext(Dispatchers.IO) {
+                runCatching { EnvProbe.collect() }.getOrElse { t ->
+                    "! env probe 失败：" + t.javaClass.simpleName + ": " + (t.message ?: "")
+                }
             }
             text.lineSequence().forEach { log(it) }
             runCatching {
-                val cm = getApplication<Application>()
-                    .getSystemService(Context.CLIPBOARD_SERVICE) as ClipboardManager
+                val cm = app.getSystemService(Context.CLIPBOARD_SERVICE) as ClipboardManager
                 cm.setPrimaryClip(ClipData.newPlainText("extractkit-envprobe", text))
             }
             probeText = text
             probing = false
             // 9.418: 分享改成 .log 文件（用户要求：不要纯文本，打包一个「环境自检.log」）
-            val logFile = runCatching { EnvProbe.writeReport(getApplication(), text) }.getOrNull()
+            val logFile = withContext(Dispatchers.IO) {
+                runCatching { EnvProbe.writeReport(app, text) }.getOrNull()
+            }
             message = if (logFile != null) {
                 "环境自检完成，已生成 " + logFile.name + "，选一个 app 发出即可"
             } else {
@@ -205,31 +213,6 @@ class CalibrationModel(app: Application) : AndroidViewModel(app) {
         advTaskBytes = taskBytes
     }
 
-    /** 固件页提取出来的 zip（内含 boot.img）直接交给标定。 */
-    fun analyzeZip(resolver: ContentResolver, zip: java.io.File) {
-        if (busy) return
-        viewModelScope.launch {
-            val entry = withContext(Dispatchers.IO) {
-                runCatching {
-                    java.util.zip.ZipFile(zip).use { z ->
-                        val e = z.entries().toList()
-                            .firstOrNull { it.name.endsWith("boot.img") }
-                            ?: throw IllegalStateException("这个 zip 里没有 boot.img")
-                        val out = java.io.File(
-                            getApplication<android.app.Application>().filesDir,
-                            "extracted-" + e.name.substringAfterLast('/'),
-                        )
-                        z.getInputStream(e).use { i -> out.outputStream().use { o -> i.copyTo(o) } }
-                        out
-                    }
-                }
-            }
-            entry.onSuccess { analyze(resolver, Uri.fromFile(it)) }
-                .onFailure {
-                    fail("标定失败：${it.message}")
-                }
-        }
-    }
 
     fun analyze(resolver: ContentResolver, uri: Uri) {
         if (busy) return
@@ -646,7 +629,7 @@ class CalibrationModel(app: Application) : AndroidViewModel(app) {
             taskAllocLow21 = parseHex(advTask, 0x1CB240),
             taskAllocBytes = btf?.sizeOf("task_struct") ?: parseHex(advTaskBytes, 0x12C0),
             credReq = off.credSize,
-            credAlloc = (off.credSize + 15) / 16 * 16,
+            credAlloc = ConfigGen.credSlabObjectBytes(off.credSize),
             evCacheAlloc = ev?.get(0) ?: 269,
             evCacheFree = ev?.get(1) ?: 272,
             evPageAlloc = ev?.get(2) ?: 275,

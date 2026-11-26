@@ -47,19 +47,6 @@ object ChainPlan {
     /** HONOR 链要落在设备上的外部资产（名字 -> 是否需要执行位）。 */
     val HONOR_TARGET = "perfprobe"
     val HONOR_MAP = HonorMap.FILE
-    /**
-     * 要推到设备上的有执行位要求的资产。
-     *
-     * 9.159 起 perf.tbl 不再随 APK 打包：那份表是参考实现从它自己的
-     * 5.10.236 导出的外部地址表，换一颗内核就全是错的。改成运行时由
-     * [HonorMap] 按本机标定写 honor.map（见 ExtractEngine.deployHonorMap）。
-     *
-     * 9.177 起 msm_perf.ko 也不再打包：5.x 与 6.6/6.12 统一走管理器自带的
-     * ksud late-load，模块由 ksud 提供，链里不再自己 init_module。
-     */
-    val HONOR_ASSETS: List<Pair<String, Boolean>> = listOf(
-        HONOR_TARGET to true,
-    )
 
     /**
      * HONOR 链的命令行：与参考实现 assets/bootflow.sh 的 ARGS 逐字一致，

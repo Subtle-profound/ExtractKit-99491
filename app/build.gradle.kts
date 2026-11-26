@@ -18,8 +18,8 @@ android {
         applicationId = "com.extractkit.app"
         minSdk = 31
         targetSdk = 35
-        versionCode = 633
-        versionName = "9.444"
+        versionCode = 646
+        versionName = "9.457"
         resourceConfigurations += listOf("zh", "en")
 
         ndk {
